@@ -4,7 +4,7 @@
 > Product brief: see conversation brief (to be copied into `.specs/discovery/PRODUCT-BRIEF.md`).
 > Process: Master Prompt — Autonomous Spec-Driven Development Factory.
 
-Current phase: **DISCOVERY — Round 1 (desk research)**
+Current phase: **DISCOVERY — Round 6 (validation of one candidate pending)**
 Planning Gate target: **GO / NO-GO decision only. No implementation before a GO.**
 
 ---
@@ -83,3 +83,9 @@ Pending **UD-012**: A stop / B smoke-test certified payroll (landing page + ~€
 Founder decision: niche restriction and moral filter removed (any legal niche, incl. adult, B2C, "useless"). R1–R4 only covered B2B back-office. New method: replicate niches where ≥2 independent solo operators already earn ≥$1k/mo, plus a concrete newcomer distribution gap. Criteria: `R5-CRITERIA.md`. Assumptions kept from earlier rounds (not re-confirmed): solo, no sales calls, ≤5 h/week ops; running cost relaxed to ≤€100/mo (flag). Workstreams: `research/R5-A-verified-revenue.md`, `R5-B-consumer-platforms.md`, `R5-C-adult-stigmatised.md`, `R5-D-boring-content-data.md`.
 **Round 5 result (2026-09-24): first survivor, conditional.** Pattern: Brazil-only consumer "life-admin" apps in PT-BR, found via ASO/SEO, paid by in-app subscription (verified earners Parceladinho $2.07k, Enxovaly $1.79k, Convitede $1.24k, Pluma $1.34k MRR; same pattern in DE/FR/BG). The gap is Brazil-only problems, NOT PT translations of global categories (tarot, calorie and Bible apps are already localised; tarot survivor killed by a Play Store scrape of 97 apps). Base rate warning: 17.3% of new subscription apps reach $1k/mo in 2 years, so plan a small portfolio. See `research/R5-SYNTHESIS.md`.
 Pending **UD-013**: approve R6 (sub-niche selection: 30–50 Brazil-only problems scored on demand vs weak store incumbents, pick 2–3, one-page specs) or stop.
+
+## Round 6 — Sub-niche selection (2026-09-24)
+
+Founder issued a strict B2B charter (`CHARTER.md`), then changed direction mid-round: **any niche, no criteria, no moral filter, money first**. R6 therefore continued R5's pending step (UD-013). Play Store, App Store and TrustMRR were blocked (403) in this session; only WebSearch worked.
+**Round 6 result: 1 candidate for cheap validation. It is a multi-card "meses sin intereses" (MSI) tracker for Mexico,** a copy of the verified Parceladinho model (BR, $2.07k MRR) into a larger instalment market with no dedicated app found. Buen Fin (Nov 2026) is the timing hook. 17 other candidates killed (B2B charter pass + Brazil sub-niches). See `research/R6-SYNTHESIS.md`.
+Pending **UD-014**: (a) founder does the 15-min MX store check; (b) approve a ≤€100 smoke test with the thresholds fixed in R6 §2; (c) or stop.
