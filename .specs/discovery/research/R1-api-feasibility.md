@@ -1,0 +1,162 @@
+# R1 — API / Integration Feasibility (Discovery Round 1)
+
+- Research date: 2026-09-23. Method: desk research against official developer docs, changelogs and FAQs; secondary sources are flagged.
+- Legend: **UNVERIFIED** = could not be confirmed on an official page during this round (JS-rendered page, conflicting sources, or from memory). "Doc date" is given where the page shows one.
+- Constraints assumed: solo developer, ~EUR 35/month, self-serve with no sales calls, sandbox data only, one integration pair first, minimal raw data, least privilege, multi-tenant.
+
+---
+
+## 1. Summary
+
+1. **Easiest to build and distribute: Stripe (as a source) and QuickBooks Online (as the ledger).** Both have free sandboxes you can fill with your own test data. QBO's free *Builder* tier includes 500k CorePlus (read) calls per month, and production keys only need a self-attested questionnaire. Stripe only lets a third party read another account through a published Stripe App (OAuth + permission manifest). That means one review of about 4 business days.
+2. **Xero:** technically easy, but new pricing (from 2026-03-02) makes the free Starter tier stop at **5 connections**. Going past that needs a paid tier (Core, AUD 35/month, 50 connections). The FAQ says Core also requires **app certification**, and certification needs **10 beta customers**. That conflicts with a zero-customer, no-sales launch.
+3. **Shopify:** hardest to distribute. Custom distribution is limited to one merchant (or one Plus org). Serving many merchants needs a **public app**, which means: App Store review (unlisted is allowed but still reviewed), mandatory **Shopify billing** (no off-platform billing), **protected customer data** approval for orders, **read_all_orders** approval for anything older than 60 days, and the 3 GDPR webhooks. Doable, but it is the biggest review burden and puts billing lock-in on a small SaaS.
+4. **HubSpot:** new-platform apps are capped at **25 installs** until listed in the Marketplace, and listing needs **3 active unaffiliated installs**. That is fine for an MVP. Commerce objects (invoices, payments, orders) exist, but deals are CRM data, not money records.
+5. **PayPal is a showstopper for self-serve:** acting for a third party on Transaction Search requires membership in the PayPal partner network.
+6. **WooCommerce** needs no platform review (self-hosted key-grant flow with a `read` scope). The costs are variable per-store reliability, and some plugin setups require HTTPS.
+7. **Amazon SP-API** fees were announced and then **cancelled** (2026). It is still out of scope: heavy developer registration and data-protection policy. **Salesforce:** new Connected Apps are blocked since Spring '26 (use External Client Apps), and AppExchange review is heavy.
+8. **Recommended first pair: Stripe → QuickBooks Online.** Matching is payout ↔ deposit plus charge/invoice ↔ sales receipt/invoice. Runner-up: Stripe → Xero (only if 5 connections is enough to validate). Shopify → QBO has the most demand, but it should come after validation because of review and billing lock-in.
+9. **Cross-cutting matching risk:** popular sync tools (e.g., A2X for Shopify) post **one summarized journal per payout** rather than per order. Order-level matching will often not work, so ProofOps must also support **payout-level** reconciliation.
+
+---
+
+## 2. Per-system findings
+
+### 2.1 Shopify (Admin GraphQL API)
+
+| Field | Finding |
+|---|---|
+| Auth | OAuth authorization-code grant (standalone app) or token exchange (embedded app) for public apps. [distribution](https://shopify.dev/docs/apps/launch/distribution). **Expiring offline tokens** (60-min access token + refresh token) have been available since Dec 2025 and are **mandatory for public apps created on or after 2026-04-01**. All public apps must migrate by 2027-01-01, after which non-expiring tokens get errors. [changelog Apr-2026](https://shopify.dev/changelog/expiring-offline-access-tokens-required-for-public-apps-april-1-2026), [changelog Jan-2027](https://shopify.dev/changelog/expiring-offline-access-tokens-required-for-all-public-apps-as-of-january-1-2027). Refresh-token rotation was made more resilient on 2026-08-28. [changelog](https://shopify.dev/changelog/more-resilient-refreshes-for-expiring-offline-access-tokens) |
+| Read scopes | Read-only scopes exist. `read_orders` covers orders, transactions and refunds (default window: last 60 days). `read_all_orders` is a protected scope that needs Shopify approval for older orders. `read_shopify_payments_payouts` covers payouts (**UNVERIFIED** whether extra approval is needed). [access scopes](https://shopify.dev/docs/api/usage/access-scopes), [changelog 60 days](https://shopify.dev/changelog/apps-now-need-shopify-approval-to-read-orders-older-than-60-days) |
+| Sandbox | Free, unlimited **dev stores** through the Dev Dashboard/Partner account. You can pick "Generate test data for store" at creation, and new partner orgs get an auto-created "Quickstart" store with generated data. Test orders use the Bogus gateway or a provider's test mode. [dev stores](https://shopify.dev/docs/storefronts/themes/tools/development-stores), [generated test data](https://shopify.dev/docs/api/development-stores/generated-test-data), [test orders](https://help.shopify.com/en/partners/dashboard/managing-stores/test-orders-in-dev-stores). Realism is good for orders and refunds. Real Shopify Payments **payouts** in dev stores: **UNVERIFIED** (likely unavailable, so payout matching may be untestable). |
+| Distribution | **Custom distribution:** one store, or multiple stores in the same Plus org. No review, but no Billing API either. Not viable for multi-tenant SaaS. **Public:** Shopify review is required. Admin-created custom apps are no longer available for new apps. [distribution](https://shopify.dev/docs/apps/launch/distribution). Listings can have **limited visibility (unlisted)**, but unlisted apps still go through review. [visibility](https://shopify.dev/docs/apps/launch/distribution/visibility). App Store apps **must use Shopify App Pricing / Billing API**; off-platform billing is not allowed. [App Store requirements](https://shopify.dev/docs/apps/launch/shopify-app-store/app-store-requirements), [billing](https://shopify.dev/docs/apps/launch/billing). Revenue share / fees: not re-verified this round (**UNVERIFIED**). |
+| Protected customer data | Orders, refunds and transactions **are** protected customer data. **Level 1** applies to all: data minimization, merchant notice, purpose limitation, consent/opt-out, DPA, retention periods, encryption at rest and in transit. **Level 2** applies when name/email/phone/address fields are used: adds encrypted backups, test/prod separation, DLP, staff access restriction, access logs, incident response, and formal review. Dev-store-only apps are exempt from review. [protected customer data](https://shopify.dev/docs/apps/launch/protected-customer-data). **ProofOps can stay at Level 1** by never requesting PII fields. |
+| Mandatory webhooks | `customers/data_request`, `customers/redact`, `shop/redact`. `shop/redact` fires 48 h after uninstall. Acknowledge with 2xx and complete the action within 30 days. Missing these means App Store rejection. [privacy compliance](https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance) |
+| Rate limits / pagination | Cost-based: example shows restore 50 pts/s, bucket 1,000, max 1,000 points per query. Higher-plan multipliers: **UNVERIFIED**. [Admin GraphQL](https://shopify.dev/docs/api/admin-graphql/latest), [rate limits](https://shopify.dev/docs/api/usage/rate-limits). Cursor pagination; arrays cap at 25,000 objects. Bulk Operations are available for backfill. |
+| Incremental sync | `updated_at` query filter on orders plus webhooks (`orders/updated`, `refunds/create`, …) (**UNVERIFIED** exact topic list this round). |
+| Versioning | Quarterly releases, each supported at least 12 months; unsupported versions fall forward to the oldest supported version. Current: 2026-07. [versioning](https://shopify.dev/docs/api/usage/versioning) |
+| Matching notes | Stable GID and order `name` (#1001). Shop currency and presentment currency are separate. Refunds are separate objects. Transactions carry gateway info. Fees and payouts only exist for Shopify Payments. Sync tools vary: A2X posts **one summarized journal per payout** to QBO/Xero, not per order. [A2X support](https://support.a2xaccounting.com/en/articles/6997538-step-by-step-guide-posting-your-a2x-summaries-to-quickbooks-online-xero-netsuite-or-sage) (vendor doc). |
+| Complexity / maintenance | Build: **Medium**. Distribution/compliance: **High**. Maintenance: medium (quarterly versions, token migration). |
+
+### 2.2 QuickBooks Online (Intuit)
+
+| Field | Finding |
+|---|---|
+| Auth | OAuth 2.0 authorization code. Access token about 1 h (**UNVERIFIED** this round: the OAuth page is JS-rendered). Refresh tokens rotate. **New policy:** refresh tokens now have a **maximum validity of 5 years** (sandbox from 2025-12-10, production from 2026-01-27). The refresh response includes a new expiry field. First expiries: Feb 2027 for granular/restricted scopes, Oct 2028 for `com.intuit.quickbooks.accounting`. [Intuit blog 2025-11-12](https://blogs.intuit.com/2025/11/12/important-changes-to-refresh-token-policy), [help](https://help.developer.intuit.com/s/article/Validity-of-Refresh-Token) |
+| Read scopes | The main scope is `com.intuit.quickbooks.accounting`, which is **read/write with no read-only variant**. Intuit now documents "granular permissions" (e.g., `app-foundations.custom-field-definitions.read`), but whether **read-only accounting scopes** exist for invoices/payments is **UNVERIFIED**. [scopes](https://developer.intuit.com/app/developer/qbo/docs/learn/scopes). Least privilege must therefore be enforced in code, not by the scope. |
+| Sandbox | Free. Up to **10 sandbox companies**, pre-filled with sample data, valid 2 years. Data cannot be reset, but it can be deleted and reseeded via the API. You can pick the SKU (Plus/Advanced). [sandbox FAQ](https://developer.intuit.com/app/developer/qbo/docs/develop/sandboxes/sandbox-faqs) |
+| Distribution / fees (**recent change**) | **Intuit App Partner Program**, announced 2025-05-15, live 2025-07-28; variable fees from 2025-11-01. Guide v1.2, dated 03.2026. [Guide PDF](https://static.developer.intuit.com/resources/Intuit_App_Partner_Program_Guide.pdf), [fees help](https://help.developer.intuit.com/s/article/platform-service-fees), [FAQ](https://developer.intuit.com/app/developer/qbo/docs/get-started/partner-faq). **Builder tier: USD 0.** Unmetered Core calls (mostly writes). **500,000 CorePlus calls per month** (reads/queries/reports), **blocked** above that cap, no overage. Silver USD 300/month (1M CorePlus, then USD 3.50 per 1k). Gold USD 1,700 (needs 500 active connections). Platinum USD 4,500 (needs 3,000). Only 2xx production calls are metered, aggregated across all production apps in a workspace. **Production keys** require an approved self-attested **app assessment questionnaire** plus acceptance of the terms. Intuit says it takes about 30 min to fill in and the status appears within minutes. [assessment FAQ](https://help.developer.intuit.com/s/article/New-app-assessment-process-FAQ). Marketplace listing (security + technical + marketing review) is **optional**, and per the guide table **not available at Builder**. So an unlisted, self-serve app on Builder is allowed. |
+| Rate limits | 500 requests/min per realm and 10 concurrent (Intuit help/community). [throttling](https://help.developer.intuit.com/s/article/API-call-limits-and-throttling) (**UNVERIFIED** exact current values: the page is JS-rendered) |
+| Incremental sync | **CDC endpoint** `/v3/company/<realmId>/cdc`: changes since a timestamp, look-back up to **30 days**, max 1,000 objects per response. [CDC](https://developer.intuit.com/app/developer/qbo/docs/learn/explore-the-quickbooks-online-api/change-data-capture). Query with `MetaData.LastUpdatedTime`. Webhooks **migrate to CloudEvents format**: official deadline 2026-05-15, some sources say extended to 2026-07-31 (**UNVERIFIED**). [Intuit blog](https://blogs.intuit.com/2025/11/12/upcoming-change-to-webhooks-payload-structure/) |
+| Historical data | No platform limit on history via query. Reads count against the CorePlus cap, so large backfills eat the 500k/month budget. |
+| Matching notes | Invoice, Payment, SalesReceipt, Deposit, JournalEntry, RefundReceipt, CreditMemo. `DocNumber` and `PrivateNote` are the usual carriers of source references. Multicurrency: `CurrencyRef` + `ExchangeRate`. Partial payments via `Payment.Line.LinkedTxn`. Whether sync tools write source IDs is tool-dependent (A2X: payout summary journal). |
+| Complexity / maintenance | Build: **Medium** (query language, minor versions, entity variety). Maintenance: medium (minor-version deprecations, webhook format change, refresh-token policy). |
+
+### 2.3 Xero
+
+| Field | Finding |
+|---|---|
+| Auth | OAuth 2.0 authorization code (plus PKCE). Access token **30 min**. Refresh token **60 days**, rotated on each use, with a 30-min retry grace period. Needs `offline_access`. [token types](https://developer.xero.com/documentation/guides/oauth2/token-types), [auth flow](https://developer.xero.com/documentation/guides/oauth2/auth-flow/) |
+| Read scopes (**recent change**) | **Granular scopes are mandatory for apps created on or after 2026-03-02.** `accounting.transactions` is split into `accounting.invoices`, `accounting.payments`, `accounting.banktransactions` and `accounting.manualjournals`. Existing apps must migrate by Sept 2027. [granular scopes FAQ](https://developer.xero.com/faq/granular-scopes), [scopes](https://developer.xero.com/documentation/guides/oauth2/scopes/). `.read` variants exist (e.g., `accounting.invoices.read`) per the scopes page, but exact names are **UNVERIFIED** because the page is JS-rendered. |
+| Sandbox | Free **Demo Company** (sample data, resets periodically; 28-day reset cycle **UNVERIFIED**). A free Xero trial org is also possible. Xero recommends a separate "test" app against the Demo Company. [granular FAQ Q9](https://developer.xero.com/faq/granular-scopes) |
+| Distribution / pricing (**recent change**) | New tiers effective **2026-03-02** (new developers from 2025-12-04); the revenue share / XASS model is retired. **Starter: free, 5 connections, 1,000 calls/day/org, no certification.** **Core: AUD 35/month, 50 connections, 10 GB egress**, AUD 2.40/GB overage. Plus AUD 245 (1,000 conn). Advanced AUD 1,445 (10,000 conn, security assessment). Enterprise POA. [pricing](https://developer.xero.com/pricing), [pricing FAQ](https://developer.xero.com/faq/pricing-and-policy-updates). **Conflict:** FAQ Q24 says adding a payment method moves you to Core, but FAQ Q22 and the pricing table list **App Certification** as a Core prerequisite. Certification (9 checkpoints including "Sign up with Xero" and App Store items) **requires 10 beta customers**. [certification checkpoints](https://developer.xero.com/documentation/xero-app-store/app-partner-guides/certification-checkpoints), [devblog](https://devblog.xero.com/update-app-certification-now-requiring-10-beta-customers-f07cff4bd103). The older "25 connections for uncertified apps / max 2 uncertified apps per org" rule is **not on current pages**, so treat it as superseded (**UNVERIFIED**). New terms **ban using API data to train AI/ML models** and ban bots/browser automation. XASS must be gone by 2026-07-01. |
+| Rate limits | Per org: 5 concurrent, 60/min, 1,000/day (Starter) or 5,000/day (other tiers). App-wide: 10,000/min. Headers `X-DayLimit-Remaining` etc., 429 + `Retry-After`. [limits FAQ](https://developer.xero.com/faq/limits). Rapid Sync (limits lifted for the first 30 min) is for certified apps only. |
+| Pagination / incremental | 100 per page on invoices, contacts, bank transactions and manual journals. `If-Modified-Since` header for deltas. [limits FAQ](https://developer.xero.com/faq/limits). Webhooks exist (limited event set; **UNVERIFIED** list). |
+| Matching notes | InvoiceID (GUID) and InvoiceNumber, `Reference` field, Payments linked to invoices (partial payments supported), CurrencyCode + CurrencyRate, BankTransactions for fees/deposits. The **Journals** endpoint is premium (Advanced + security assessment), so avoid it. Egress is billed per GB, so minimal field selection saves money. |
+| Complexity / maintenance | Build: **Low–Medium**. Business/distribution: **High** past 5 connections (certification). |
+
+### 2.4 Stripe
+
+| Field | Finding |
+|---|---|
+| Auth | For a third-party SaaS: **Stripe Apps with OAuth 2.0** (`stripe_api_access_type: oauth`, `distribution_type: public`). Access token **1 h**; refresh token **1 year**, rolled on every exchange. [Stripe Apps OAuth](https://docs.stripe.com/stripe-apps/api-authentication/oauth). Legacy Connect OAuth: `read_only` scope "can only be specified for extensions", and Stripe says it "deprecated the Connect Stripe authentication method". [Connect OAuth ref](https://docs.stripe.com/connect/oauth-reference), [publish](https://docs.stripe.com/stripe-apps/publish-app) |
+| Read permissions | Granular per object, declared in the manifest: `charge_read` (charges + refunds), `payment_intent_read`, `balance_transaction_source_read` (implies payout/balance/transfer read), `payout_read`, `invoice_read`, `subscription_read`, `credit_note_read`, `dispute_read`, `event_read`, `customer_read` (avoid for data minimization). [permissions](https://docs.stripe.com/stripe-apps/reference/permissions) |
+| Sandbox | Free test mode and **sandboxes**. Data can be seeded fully via API/CLI (test cards, test clocks for subscriptions). The OAuth app can be installed into a sandbox (`sandbox_install_compatible`). Very realistic for charges/refunds/fees; payouts in test mode are simulated. [rate limits](https://docs.stripe.com/rate-limits), [publish](https://docs.stripe.com/stripe-apps/publish-app) |
+| Distribution | **Public app needs Stripe review** (answer in about 4 business days). One public app per Stripe account. Activated account required. English listing. No real accounts in review. External testing is allowed for **25 testers** before publishing. Install links for non-marketplace onboarding work only after publishing. A UI extension is **not required** (`data_integration` apps). [publish](https://docs.stripe.com/stripe-apps/publish-app), [install links](https://docs.stripe.com/stripe-apps/install-links), [distribution](https://docs.stripe.com/stripe-apps/distribution-options). App fees charged by Stripe: none found (**UNVERIFIED**). |
+| Rate limits | 100 req/s live, 25 req/s sandbox, 25 req/s per endpoint, Search 20 req/s. **Read allocation:** average 500 reads per transaction (rolling 30 days), minimum 10k/month per account. Connect platforms get a separate allocation for reads on connected accounts. [rate limits](https://docs.stripe.com/rate-limits) |
+| Incremental sync | List endpoints filter on `created` (not updated). The Events API plus webhooks carry changes (event retention of about 30 days **UNVERIFIED** this round). `account.application.deauthorized` event on uninstall. [install links](https://docs.stripe.com/stripe-apps/install-links) |
+| Matching notes | Stable IDs (`ch_`, `pi_`, `in_`, `po_`, `txn_`). `balance_transaction` gives gross/fee/net, and a payout's balance transactions reconstruct the bank deposit, which is the best reconciliation primitive. Metadata often holds external order IDs. Multi-currency via `exchange_rate` on balance transactions. |
+| Versioning | Dated API versions pinned per request (**UNVERIFIED** cadence). Low breaking-change risk if pinned. |
+| Complexity / maintenance | Build: **Low**. Distribution: **Low–Medium** (one review). Maintenance: **Low**. |
+
+### 2.5 HubSpot
+
+| Field | Finding |
+|---|---|
+| Auth | OAuth 2.0. Access token about 30 min; refresh token long-lived (**UNVERIFIED** this round). [OAuth](https://developers.hubspot.com/docs/reference/api/app-management/oauth) |
+| Read scopes | Read-only scopes exist: `crm.objects.deals.read`, `crm.objects.invoices.read` (**UNVERIFIED** exact name; `.write` confirmed), `crm.objects.orders.read`, commerce payments (`crm.objects.commercepayments.*`). Sensitive-data scopes (`*.sensitive.read.v2`) must not be used by Marketplace apps. [scopes](https://developers.hubspot.com/docs/apps/legacy-apps/authentication/scopes), [listing reqs](https://developers.hubspot.com/docs/apps/developer-platform/list-apps/listing-your-app/app-marketplace-listing-requirements) |
+| Sandbox | Free developer account and developer test accounts (**UNVERIFIED** current trial duration). Data can be seeded via API. Commerce objects may need a Commerce Hub-enabled test account (**UNVERIFIED**). |
+| Distribution (**recent change**) | From **2025-09-22**, apps on developer platform 2025.2+ with "marketplace" distribution are **capped at 25 installs until listed**. Private distribution is capped at 10 customers (100 for Solution Partners). [changelog](https://developers.hubspot.com/changelog/new-marketplace-distribution-app-install-limits). Listing needs **3 active unaffiliated production installs**, OAuth only, minimal scopes, review within 10 business days, and a supported platform version (2025.2 / 2026.03). [listing reqs](https://developers.hubspot.com/docs/apps/developer-platform/list-apps/listing-your-app/app-marketplace-listing-requirements). No listing fee found. |
+| Rate limits | Public Marketplace apps: 110 req / 10 s per account. The Search API has stricter limits and no rate-limit headers. [usage details](https://developers.hubspot.com/docs/api/usage-details) |
+| Incremental | Search API filter on `hs_lastmodifieddate`, webhooks (**UNVERIFIED** details). |
+| Matching notes | Deals rarely hold settled money. They are useful for "closed-won without an invoice/payment" discrepancies against Stripe/QBO. Deal amount vs invoice amount is a fuzzy match (owner-entered). |
+| Complexity / maintenance | Build: **Medium** (platform version churn: 2025.2 → 2026.03, legacy apps). Distribution: Medium. |
+
+### 2.6 WooCommerce
+
+| Field | Finding |
+|---|---|
+| Auth | Per-store REST API keys (HTTP Basic over HTTPS; OAuth 1.0a over HTTP). The app key-grant endpoint `/wc-auth/v1/authorize` takes `scope=read` and a `callback_url` that must be HTTPS. [REST docs](https://woocommerce.github.io/woocommerce-rest-api-docs/#authentication). Keys don't expire, so they are long-lived secrets. |
+| Sandbox | Free: local or cheap WordPress + WooCommerce install, fully seedable. Realism is high but depends on the gateway plugins used. |
+| Distribution | **No central review** for API access. Woo Marketplace listing is optional (not researched). |
+| Rate limits / pagination | No platform limits; bound by the merchant's host. `per_page` (max 100 **UNVERIFIED**), page/offset. Orders filter on `after`/`before`; `modified_after` exists in newer versions (**UNVERIFIED**). Webhooks are configurable per store. |
+| Matching notes | Order ID/number, `transaction_id` from the gateway (e.g., Stripe `ch_`/`pi_`), refunds as sub-resources. Fees live in gateway-specific meta. |
+| Complexity / maintenance | Build: **Medium** (heterogeneous hosts, plugins, HPOS). Support burden: **High** (merchant hosting failures, security plugins blocking the API). |
+
+### 2.7 PayPal
+
+| Field | Finding |
+|---|---|
+| Auth / distribution | REST client-credentials per app. **Using Transaction Search on behalf of third parties requires membership in the PayPal partner network** ("Reach out to your partner manager"). [Transaction Search guide](https://developer.paypal.com/docs/transaction-search/). Self-serve workaround: the merchant creates their own REST app and pastes client ID/secret. That is high friction and not least-privilege (**UNVERIFIED** acceptable under PayPal terms). |
+| Sandbox | Free sandbox accounts (standard). |
+| Limits | Max date range 31 days per call, 3 years of history, transactions appear up to 3 h late, page size max 500, 10,000 records per request. Enabling a new permission can take up to 9 h. [List transactions](https://developer.paypal.com/docs/api/transaction-search/v1/) |
+| Verdict | **Showstopper** for a self-serve MVP. |
+
+### 2.8 Brief: Salesforce, Chargebee, Paddle, Amazon SP-API
+
+- **Salesforce:** Since Sept 2025, *uninstalled* connected apps are blocked for users who haven't authorized them before. From **Spring '26, new Connected Apps can't be created** unless Support enables it; use **External Client Apps**. [SF help 005228017](https://help.salesforce.com/s/articleView?id=005228017&language=en_US&type=1), [SF admins blog 2025](https://admin.salesforce.com/blog/2025/get-ready-for-changes-to-connected-app-usage-restrictions). Free Developer Edition orgs. AppExchange security review cost/timeline not researched (**UNVERIFIED**). High complexity. Opportunities have the same fuzzy-money problem as HubSpot deals. **Defer.**
+- **Chargebee:** API-key auth (Basic), with a **Read-Only key** type and separate test and live sites. OAuth is mentioned for some scenarios (**UNVERIFIED**). [auth](https://apidocs.chargebee.com/docs/api/auth), [API keys](https://www.chargebee.com/docs/billing/2.0/site-configuration/api_keys). No platform review is needed if the customer pastes a read-only key. Low complexity. The paste-a-key UX is acceptable for B2B.
+- **Paddle Billing:** Bearer API keys with **per-entity permissions** (improved 2025), and a separate sandbox (`sandbox-api.paddle.com`). No OAuth for third parties documented. [API keys](https://developer.paddle.com/api-reference/about/api-keys), [permissions](https://developer.paddle.com/api-reference/about/permissions), [2025 changelog](https://developer.paddle.com/changelog/2025/api-key-improvements). Low complexity.
+- **Amazon SP-API:** Third-party developer fees (USD 1,400/yr + GET-call tiers) were announced in Nov 2025, postponed, then **cancelled** ("will not move forward… at this time"). [Amazon announcement](https://developer.amazonservices.com/cancellation-of-sp-api-fees). Orders API v2026-01-01 has breaking changes (GitHub discussion, **UNVERIFIED**). Developer registration and data protection policy are heavy, and PII is restricted. **High** complexity. **Out of scope.**
+
+---
+
+## 3. Pair feasibility
+
+| Pair | Sandbox both sides? | Review / cert burden | API cost (early stage) | Matching-key availability | Complexity | Showstoppers |
+|---|---|---|---|---|---|---|
+| **Stripe → QBO** | Yes / Yes (free) | Stripe App review (~4 bd); Intuit questionnaire (minutes) | USD 0 (Builder 500k reads/mo, hard block) | Payout ↔ Deposit (amount/date/net); charge/invoice ID in QBO memo/DocNumber *if* the sync tool writes it (**UNVERIFIED** per tool) | Low–Med | None found |
+| **Stripe → Xero** | Yes / Yes (Demo Co.) | Stripe review; Xero none ≤5 conns, certification (10 beta customers) beyond | USD 0 ≤5 conns; AUD 35/mo Core | Same as above; Xero `Reference` field | Low–Med | 5-connection ceiling without certification |
+| **Shopify → QBO** | Yes (dev store) / Yes | **High**: Shopify public app review, protected customer data L1, read_all_orders approval, GDPR webhooks, forced Shopify billing | USD 0 API; Shopify billing share **UNVERIFIED** | Order name ↔ QBO DocNumber only for per-order sync tools; **A2X-style summary journals → payout-level only** | Med–High | Billing lock-in, review effort; payouts hard to test in dev store (**UNVERIFIED**) |
+| **Shopify → Xero** | Yes / Yes | Shopify (high) + Xero cert past 5 | Xero AUD 35+ | Same as above | High | Both review burdens combined |
+| **WooCommerce → QBO** | Yes (self-host) / Yes | Intuit questionnaire only | USD 0 | Woo order no. / gateway `transaction_id` | Med | Per-store hosting variability |
+| **HubSpot → Stripe** (deals vs revenue) | Yes / Yes | HubSpot 25-install cap until listed; Stripe review | USD 0 | Weak: deal ↔ customer/invoice via email/company (PII) or custom property | Med | Needs PII for joins, which conflicts with minimization |
+| **HubSpot → QBO** | Yes / Yes | HubSpot + Intuit | USD 0 | Weak (as above) | Med | Same |
+| **PayPal → any** | Yes / – | Partner network membership | – | Transaction ID | – | **Partner network required** |
+| **Chargebee/Paddle → QBO/Xero** | Yes / Yes | None on billing side (API key) | USD 0 / Xero tiers | Invoice ID; payment reference | Low–Med | Paste-a-key UX; smaller market |
+
+---
+
+## 4. Security & data-minimization implications per pair
+
+- **Stripe → QBO:** Request only `charge_read`, `payout_read`, `balance_transaction_source_read`, `invoice_read`, `event_read`; **omit `customer_read`**. The QBO accounting scope is read/write with no read-only variant, so enforce read-only in code (allow only GET/query paths, add a test that fails on any POST). Store normalized fields only (id, amount, currency, date, status, reference), not raw payloads. Encrypt refresh tokens: Stripe's rotate yearly, QBO's rotate and are now capped at 5 years. Handle token rotation atomically (store the new token before using it). Handle `account.application.deauthorized` and QBO disconnect by purging tenant data. Intuit's questionnaire covers data stewardship, so have written retention and deletion policies ready.
+- **Stripe → Xero:** Same Stripe side. Xero granular `*.read` scopes allow real least privilege. Egress is billed per GB, so minimal fetching is also cheaper. The **AI/ML training ban** must be in ToS/architecture: never feed Xero data into model training, and document any LLM use (inference only) (**UNVERIFIED** whether inference-only use is fine; ask Xero). No bots or browser automation.
+- **Shopify → QBO/Xero:** Stay at **protected data Level 1** by not requesting name/email/phone/address fields. Level 1 still requires encryption at rest and in transit, retention periods, a DPA, and merchant notice. Implement the 3 GDPR webhooks plus uninstall purge (`shop/redact` at 48 h). Store order name/ID/amounts only. Note: `read_all_orders` access is scrutinized, so justify it by the reconciliation window.
+- **WooCommerce → QBO:** Woo keys never expire and are static secrets, so encrypt them, allow per-tenant revocation, and request only `scope=read`. HTTPS callback required.
+- **HubSpot pairs:** Joins likely need email/company, which is PII that increases GDPR exposure. Prefer a custom property carrying the Stripe customer/invoice ID (requires user setup). Avoid sensitive scopes (Marketplace forbids them).
+- **All pairs (multi-tenant):** Keep a per-tenant encryption key or envelope encryption for tokens, tenant-scoped queries (RLS), audit logs of API pulls, a configurable retention window for normalized records, and a "disconnect = delete" guarantee.
+
+---
+
+## 5. Open questions
+
+1. **Intuit:** Do granular **read-only accounting scopes** now exist (invoice/payment read)? The page is JS-rendered; check in the developer portal after login.
+2. **Intuit:** Are sandbox calls excluded from CorePlus metering? The guide says "production Apps" (likely yes; confirm). What exactly is the Builder listing restriction?
+3. **Xero:** Does moving to **Core (>5 connections) require certification**? FAQ Q22 and Q24 conflict. Ask Xero support. Also: does the 10-beta-customer rule still apply under the 2026 tiers?
+4. **Xero:** Is LLM **inference** on API data (not training) allowed under the new terms?
+5. **Stripe:** Are there any fees or revenue share for published Stripe Apps? Event retention window? Can a published app stay **unlisted** (install-link only)?
+6. **Shopify:** Current revenue share for App Store billing. Can dev stores produce Shopify Payments **payouts** for testing? Does `read_shopify_payments_payouts` need extra approval?
+7. **Sync-tool reality check (R2 candidate):** For Stripe→QBO and Shopify→QBO, which tools (QuickBooks native Stripe/Shopify connectors, Synder, A2X, Webgility) write the source ID into DocNumber/PrivateNote vs post summaries? This decides whether matching is per transaction or per payout.
+8. **HubSpot:** Exact invoice/payment read scope names on platform 2026.03. Do commerce objects exist in free developer test accounts?
+9. **PayPal:** Is there any path for small ISVs into the partner network, or is the paste-own-credentials model allowed?
+10. **Budget:** All recommended options are USD/AUD 0 at MVP scale. Confirm the hosting and encryption costs (KMS) fit within EUR 35.
