@@ -60,3 +60,19 @@
 1. **Obvious Brazil-only niches are already filled**, usually with a free government app on top (eSocial Doméstico, CNH do Brasil, Receita Saúde). R5's earners won by beating *weak* incumbents, and judging weakness needs store data. Next time, collect it with the founder's own browser or in a session where the stores are reachable.
 2. **Copying a verified earner into a new geography beats inventing a Brazil niche.** The problem is proven (someone already pays), and the only open question is local competition, which is cheap to check.
 3. **Every B2B regulatory "why now" drew cheap tools within months** (EUDR, NR-1, 47-day TLS, DROP). Under the strict B2B charter this round found no survivor either (cumulative R1–R6: ~310 candidates).
+
+## 5. Addendum: website-only niches (founder question, 2026-09-24)
+
+Context: store data is blocked here, but web-search results *are* visible, so web niches are easier to check in this session. R5-D already killed ad/SEO-funded sites (20 candidates: AI answers in search, low PT ad earnings per view, public P&Ls under $728/mo). This pass tested **subscription or paid websites** copying verified earners.
+
+| Candidate | Model copied (verified) | Result | Why |
+|---|---|---|---|
+| **MSI tracker as a web app (Mexico)** | Parceladinho ($2.07k MRR) | **SURVIVES to validation** | Search results for MSI calculator/tracker queries are weak: generic US loan calculators, a Medium post, one small page ([sokonet](https://sokonet.mx/msi/)) and a **paid Gumroad MSI spreadsheet** ([plantilla msi](https://sprluis.gumroad.com/l/plantilla_msi)). That is evidence that people pay for this job. Caveat: the search tool is US-based, not Google Mexico. |
+| Portugal citizenship civics test prep | Francopass ($1.5k MRR) | KILL | Test in law since 19 May 2026 but its format isn't defined yet. Already ≥3 prep sites (Provacidadania €49 one-time, ciple.org, prep2go). One-time payment, not MRR. The residence period rose to 7–10 years, which shrinks the applicant flow. |
+| Online legal-notice letters with proof of receipt (BR) | Send Letters Online UK ($5.5k/30d) | KILL | The Correios' own e-Carta/Telegrama online service, AR Online (since 2014, 50M ARs), Arbitralis, Escrybe. |
+| Spanish WhatsApp invitations (MX) | Convitede ($1.24k MRR) | KILL | Canva free, invitar.com.mx, Invitio ($29.99/event), invitiapp. |
+
+**Web vs app for the MSI candidate:**
+- **Web first is cheaper to validate.** The landing page *is* the product's first page. Build per-bank SEO pages ("cómo ver mis meses sin intereses BBVA/Nu/Liverpool") plus a free MSI calculator as the entry point. Take payment on the web (Paddle/Stripe) and keep the ~15–30% store fee.
+- **Trade-off:** it loses app-store search, which is Parceladinho's main channel. Reminders need email or web push instead of native notifications.
+- **Recommendation:** web app (PWA) first for the smoke test and SEO. Wrap it for the stores only if paid conversion clears the R6 §2 thresholds.
